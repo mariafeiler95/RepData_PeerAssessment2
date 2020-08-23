@@ -1,0 +1,102 @@
+---
+title: "Analyzing Health, Economy, and Storms in the United States"
+author: "Maria Feiler"
+date: "8/23/2020"
+output: html_document
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=12, fig.height=8, fig.path='Figs/', warning=FALSE, message=FALSE)
+```
+
+# Synopsis
+The goal of this report is to explore the NOAA Storm Database to answer some basic questions about severe weather events and their consequences to health and the economy. This report aims to answer the following questions: 
+1. Across the United States, which types of events are most harmful with respect to population health?
+2. Across the United States, which types of events have the greatest economic consequences?
+
+# Introduction
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+# Data
+The stormData for this assignment come in the form of a comma-separated-value file compressed via the bzip2 algorithm to reduce its size. You can download the file from the course web site. There is also some documentation of the Database available. Here you will find how some of the variables are constructed/defined.
+
+- [Storm Data](https://d396qusza40orc.cloudfront.net/repstormData%2FstormData%2FStormstormData.csv.bz2)
+- [National Weather Service Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repstormData%2Fpeer2_doc%2Fpd01016005curr.pdf)
+- [National Climatic stormData Center Storm Events FAQ](https://d396qusza40orc.cloudfront.net/repstormData%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf)
+
+The events in the Database start in the year 1950 and end in November 2011. In the earlier years of the Database there are generally fewer events recorded, most likely due to a lack of good records. More recent years should be considered more complete.
+
+# Data Processing
+Set the working directory, download the file, and read the data into a dataframe. 
+```{r}
+setwd(".")
+download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2",destfile = "./stormData.csv.bz2",method = "curl")
+stormData <- read.csv("./stormData.csv.bz2")
+```
+
+Investigate the dataframe to ensure proper transfer using the resources provided above. 
+```{r}
+str(stormData)
+```
+
+# Calculations and Transformations
+Load the required packages.
+```{r}
+library(plyr)
+library(ggplot2)
+```
+
+## Human Harm
+Find the sum of FATALITIES and INJURIES by EVTYPE to help summarize the total harm done to humans based on event type. Then identify the top 10 harmful storm types. 
+```{r}
+stormInjuries <- ddply(stormData, .(EVTYPE), summarize, TotalHarm = sum(FATALITIES + INJURIES))
+stormInjuries <- stormInjuries[order(stormInjuries$TotalHarm, decreasing = T), ]
+TopHarm <- stormInjuries[1:10,]
+```
+
+## Economic Harm
+Find the sum of PROPDMG by EVTYPE and PROPDMGEXP to investigate the types and ammount of property damage by event type.
+```{r}
+damageProp <- ddply(stormData, .(EVTYPE, PROPDMGEXP), summarize, PROPDMG = sum(PROPDMG))
+damageProp <- mutate(damageProp, PropertyDamage = ifelse(toupper(PROPDMGEXP) =='K', PROPDMG*1000, ifelse(toupper(PROPDMGEXP) =='M', PROPDMG*1000000, ifelse(toupper(PROPDMGEXP) == 'B', PROPDMG*1000000000, ifelse(toupper(PROPDMGEXP) == 'H', PROPDMG*100, PROPDMG)))))
+damageProp <- subset(damageProp, select = c("EVTYPE", "PropertyDamage"))
+damagePropTotal <- ddply(damageProp, .(EVTYPE), summarize, TotalPropDamage = sum(PropertyDamage))
+```
+
+Find the sum of CROPDMG by EVTYPE and CROPDMGEXP to investigate the types and ammount of crop damage by event type.
+```{r}
+damageCrop <- ddply(stormData, .(EVTYPE, CROPDMGEXP), summarize, CROPDMG = sum(CROPDMG))
+damageCrop <- mutate(damageCrop, CropDamage = ifelse(toupper(CROPDMGEXP) =='K', CROPDMG*1000, ifelse(toupper(CROPDMGEXP) =='M', CROPDMG*1000000, ifelse(toupper(CROPDMGEXP) == 'B', CROPDMG*1000000000, ifelse(toupper(CROPDMGEXP) == 'H', CROPDMG*100, CROPDMG)))))
+damageCrop <- subset(damageCrop, select = c("EVTYPE", "CropDamage"))
+damageCropTotal <- ddply(damageCrop, .(EVTYPE), summarize, TotalCropDamage = sum(CropDamage))
+```
+
+Combine the property and crop damage to investigate total damage done by storm type. Then identify the top 10 harmful storm types. 
+```{r}
+stormDamage <- merge(damagePropTotal, damageCropTotal, by="EVTYPE")
+stormDamage <- mutate(stormDamage, TotalDamage = TotalPropDamage + TotalCropDamage)
+stormDamage <- stormDamage[order(stormDamage$TotalDamage, decreasing = T), ]
+TopDamage <- stormDamage[1:10, ]
+```
+
+# Results
+## Population Health and Storm Events
+Based on the data presented below, tornadoes cause the most injury and fatalities, or harm to population health, in the United States. 
+```{r}
+TopHarm
+totalHarmPlot <- ggplot(TopHarm, aes(EVTYPE,TotalHarm, fill=EVTYPE)) + geom_bar(stat="identity") + xlab("Top 10 events")+ ylab("Total Injuries/Fatalties")+ ggtitle("Population Harm due to Severe Weather Events in the U.S from 1950-2011") + theme(axis.text.x=element_text(angle=45,hjust=1))
+totalHarmPlot
+```
+
+## Economic Damage and Storm Events
+Based on the data presented below, foods cause the most property and crop damage, or negative economic impact, in the United States. 
+```{r}
+TopDamage
+totalDamagePlot <- ggplot(TopDamage, aes(EVTYPE,TotalDamage, fill=EVTYPE)) + geom_bar(stat="identity") + xlab("Top 10 Events")+ ylab("Total Economic Damage")+ ggtitle("Total Economic Damage due to Severe Weather Events in the U.S from 1950-2011") + theme(axis.text.x=element_text(angle=45,hjust=1))
+totalDamagePlot 
+```
+
+# Conclusions
+Overall, tornados represent the most risk to population health while floods represent the highest risk for property damage. Resources should be distributed accordingly. 
